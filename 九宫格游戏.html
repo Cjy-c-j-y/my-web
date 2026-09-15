@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>九宫棋小游戏 - 网页版</title>
+    <style>
+        body { font-family: 'Microsoft YaHei', sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f2f5; margin-top: 40px; }
+        h1 { color: #333; }
+        #status { font-size: 18px; font-weight: bold; color: #007bff; margin-bottom: 15px; height: 24px; }
+        .board { display: grid; grid-template-columns: repeat(3, 100px); grid-template-rows: repeat(3, 100px); gap: 5px; background-color: #ddd; padding: 5px; border-radius: 8px; }
+        .cell { width: 100px; height: 100px; background-color: white; border: none; font-size: 40px; font-weight: bold; cursor: pointer; transition: background 0.2s; display: flex; justify-content: center; align-items: center; border-radius: 4px; user-select: none; }
+        .cell:hover { background-color: #e9ecef; }
+        .cell:disabled { cursor: not-allowed; }
+        .player1 { color: blue; }
+        .player2 { color: red; }
+        .highlight { background-color: yellow !important; }
+        .controls { margin-top: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+        select, button { padding: 8px 15px; font-size: 14px; border-radius: 5px; border: 1px solid #ccc; cursor: pointer; }
+        button { background-color: #007bff; color: white; border: none; transition: background 0.2s; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; }
+    </style>
+</head>
+<body>
+
+    <h1>九宫棋小游戏</h1>
+    <div id="status">轮到玩家 X 落子</div>
+    
+    <div class="board" id="board">
+        <!-- 3x3 格子由 JS 动态生成 -->
+    </div>
+
+    <div class="controls">
+        <select id="mode">
+            <option value="pve">人机对战</option>
+            <option value="pvp">双人对战</option>
+        </select>
+        <select id="difficulty">
+            <option value="easy">简单难度</option>
+            <option value="hard">困难难度</option>
+        </select>
+        <button onclick="resetGame()">再来一盘</button>
+        <button onclick="undoMove()" id="btnUndo">悔棋</button>
+        <button onclick="surrender()" id="btnSurrender">认输</button>
+        <button onclick="hintMove()" id="btnHint">提示</button>
+    </div>
+
+    <script>
+        // 1. 核心数据与状态
+        let board = [[0,0,0],[0,0,0],[0,0,0]];
+        let currentPlayer = 1; // 1为X, 2为O
+        let isGameOver = false;
+        let history = []; // 记录历史，用于悔棋
+        let isAIThinking = false; // 防止人机模式下玩家狂点
+
+        const boardElement = document.getElementById('board');
+        const statusElement = document.getElementById('status');
+        const modeSelect = document.getElementById('mode');
+        const diffSelect = document.getElementById('difficulty');
+
+        // 2. 初始化界面
+        function initBoard() {
+            boardElement.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    const cell = document.createElement('button');
+                    cell.className = 'cell';
+                    cell.id = `cell-${i}-${j}`;
+                    cell.onclick = () => handleClick(i, j);
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
+
+        // 3. 重置游戏
+        function resetGame() {
+            board = [[0,0,0],[0,0,0],[0,0,0]];
+            currentPlayer = 1;
+            isGameOver = false;
+            history = [];
+            isAIThinking = false;
+            updateUI();
+            statusElement.innerText = "轮到玩家 X 落子";
+            statusElement.style.color = "blue";
+        }
+
+        // 4. 处理玩家点击
+        function handleClick(row, col) {
+            if (isGameOver || isAIThinking) return;
+            if (modeSelect.value === 'pve' && currentPlayer === 2) return; // 人机模式电脑回合
+            if (board[row][col] !== 0) return; // 已有棋子
+
+            makeMove(row, col, currentPlayer);
+
+            // 人机模式下，如果游戏没结束，电脑走一步
+            if (!isGameOver && modeSelect.value === 'pve' && currentPlayer === 2) {
+                isAIThinking = true;
+                statusElement.innerText = "电脑正在思考...";
+                setTimeout(() => { // 延迟一下，让玩家看清
+                    aiMove();
+                    isAIThinking = false;
+                }, 300);
+            }
+        }
+
+        // 5. 执行落子
+        function makeMove(row, col, player) {
+            board[row][col] = player;
+            history.push({row, col, player});
+
+            const cell = document.getElementById(`cell-${row}-${col}`);
+            cell.innerText = player === 1 ? 'X' : 'O';
+            cell.classList.add(player === 1 ? 'player1' : 'player2');
+            cell.disabled = true;
+
+            if (checkWin(player)) {
+                isGameOver = true;
+                let winner = player === 1 ? "玩家 X" : (modeSelect.value === 'pve' ? "电脑 O" : "玩家 O");
+                statusElement.innerText = winner + " 获胜！";
+                alert(winner + " 获胜！");
+                return;
+            }
+
+            if (checkDraw()) {
+                isGameOver = true;
+                statusElement.innerText = "平局！";
+                alert("平局！");
+                return;
+            }
+
+            // 切换玩家
+            currentPlayer = currentPlayer === 1 ? 2 : 1;
+            if (modeSelect.value === 'pvp' || currentPlayer === 1) {
+                statusElement.innerText = currentPlayer === 1 ? "轮到玩家 X 落子" : "轮到玩家 O 落子";
+                statusElement.style.color = currentPlayer === 1 ? "blue" : "red";
+            }
+        }
+
+        // 6. 胜负判定
+        function checkWin(player) {
+            for (let i = 0; i < 3; i++) {
+                if (board[i][0] === player && board[i][1] === player && board[i][2] === player) return true;
+                if (board[0][i] === player && board[1][i] === player && board[2][i] === player) return true;
+            }
+            if (board[0][0] === player && board[1][1] === player && board[2][2] === player) return true;
+            if (board[0][2] === player && board[1][1] === player && board[2][0] === player) return true;
+            return false;
+        }
+
+        function checkDraw() {
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === 0) return false;
+                }
+            }
+            return true;
+        }
+
+        // 7. AI 落子
+        function aiMove() {
+            let move;
+            if (diffSelect.value === 'easy') {
+                let emptyCells = [];
+                for (let i = 0; i < 3; i++) {
+                    for (let j = 0; j < 3; j++) {
+                        if (board[i][j] === 0) emptyCells.push({row: i, col: j});
+                    }
+                }
+                if (emptyCells.length > 0) {
+                    move = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                }
+            } else {
+                move = getBestMove();
+            }
+            if (move) makeMove(move.row, move.col, 2);
+        }
+
+        // 8. 核心算法：困难AI和提示共用
+        function getBestMove() {
+            // 尝试自己赢
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === 0) {
+                        board[i][j] = 2;
+                        if (checkWin(2)) { board[i][j] = 0; return {row: i, col: j}; }
+                        board[i][j] = 0;
+                    }
+                }
+            }
+            // 阻挡玩家赢
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === 0) {
+                        board[i][j] = 1;
+                        if (checkWin(1)) { board[i][j] = 0; return {row: i, col: j}; }
+                        board[i][j] = 0;
+                    }
+                }
+            }
+            // 抢中心
+            if (board[1][1] === 0) return {row: 1, col: 1};
+            // 抢角落
+            let corners = [{row:0,col:0}, {row:0,col:2}, {row:2,col:0}, {row:2,col:2}];
+            for (let c of corners) { if (board[c.row][c.col] === 0) return c; }
+            // 随便下
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === 0) return {row: i, col: j};
+                }
+            }
+            return null;
+        }
+
+        // 9. 悔棋
+        function undoMove() {
+            if (isGameOver || isAIThinking) {
+                alert("游戏已结束或电脑正在思考，无法悔棋！");
+                return;
+            }
+            if (history.length === 0) {
+                alert("没有可以悔棋的步骤！");
+                return;
+            }
+
+            // 人机模式退两步（玩家和电脑各一步）
+            let steps = (modeSelect.value === 'pve' && history.length >= 2) ? 2 : 1;
+            
+            for (let i = 0; i < steps; i++) {
+                let lastMove = history.pop();
+                board[lastMove.row][lastMove.col] = 0;
+                let cell = document.getElementById(`cell-${lastMove.row}-${lastMove.col}`);
+                cell.innerText = '';
+                cell.classList.remove('player1', 'player2', 'highlight');
+                cell.disabled = false;
+                currentPlayer = lastMove.player;
+            }
+            statusElement.innerText = currentPlayer === 1 ? "轮到玩家 X 落子" : "轮到玩家 O 落子";
+            statusElement.style.color = currentPlayer === 1 ? "blue" : "red";
+        }
+
+        // 10. 认输
+        function surrender() {
+            if (isGameOver) return;
+            let loser = currentPlayer === 1 ? "玩家 X" : (modeSelect.value === 'pve' ? "电脑 O" : "玩家 O");
+            let winner = currentPlayer === 1 ? (modeSelect.value === 'pve' ? "电脑 O" : "玩家 O") : "玩家 X";
+            isGameOver = true;
+            statusElement.innerText = winner + " 获胜！ (" + loser + "认输)";
+            alert(loser + " 投降， " + winner + " 获胜！");
+        }
+
+        // 11. 提示
+        function hintMove() {
+            if (isGameOver || isAIThinking || (modeSelect.value === 'pve' && currentPlayer === 2)) return;
+            
+            // 清除旧的高亮
+            document.querySelectorAll('.cell').forEach(c => c.classList.remove('highlight'));
+
+            // 获取最佳位置 (针对玩家1)
+            let best = getBestMove();
+            // 注意：getBestMove 默认寻找的是数字2（电脑）的最佳位置，这里我们需要稍微变通一下：寻找玩家1的最佳位置
+            // 我们重新写一个针对玩家1的算法或者将上面的 getBestMove 替换为更通用的评估函数。
+            // 为了简单，这里直接让提示功能调用针对玩家1的评估：
+            let bestForP1 = getBestMoveForPlayer(1);
+            if (bestForP1) {
+                let cell = document.getElementById(`cell-${bestForP1.row}-${bestForP1.col}`);
+                cell.classList.add('highlight');
+                setTimeout(() => cell.classList.remove('highlight'), 2000); // 2秒后取消高亮
+                alert("建议下在黄色高亮位置！");
+            }
+        }
+
+        // 辅助函数：寻找针对特定玩家的最佳位置（用于提示）
+        function getBestMoveForPlayer(player) {
+            let opponent = player === 1 ? 2 : 1;
+            // 尝试自己能赢
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === 0) {
+                        board[i][j] = player;
+                        if (checkWin(player)) { board[i][j] = 0; return {row: i, col: j}; }
+                        board[i][j] = 0;
+                    }
+                }
+            }
+            // 阻挡对手赢
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === 0) {
+                        board[i][j] = opponent;
+                        if (checkWin(opponent)) { board[i][j] = 0; return {row: i, col: j}; }
+                        board[i][j] = 0;
+                    }
+                }
+            }
+            if (board[1][1] === 0) return {row: 1, col: 1};
+            let corners = [{row:0,col:0}, {row:0,col:2}, {row:2,col:0}, {row:2,col:2}];
+            for (let c of corners) { if (board[c.row][c.col] === 0) return c; }
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === 0) return {row: i, col: j};
+                }
+            }
+            return null;
+        }
+
+        // 初始化
+        initBoard();
+        resetGame();
+
+    </script>
+</body>
+</html>
